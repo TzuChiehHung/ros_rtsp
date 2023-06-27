@@ -16,8 +16,8 @@ using namespace image2rtsp;
 
 
 void Image2RTSPNodelet::onInit() {
-    string pipeline, mountpoint, bitrate, caps;
-    string pipeline_tail =  " key-int-max=30 ! video/x-h264, profile=baseline ! rtph264pay name=pay0 pt=96 )"; // Gets completed based on rosparams below
+    string pipeline, mountpoint, format, encoder;
+    string pipeline_tail =  " ! video/x-h264, stream-format=(string)byte-stream, profile=baseline ! h264parse ! rtph264pay name=pay0 pt=96 config-interval=1 )"; // Gets completed based on rosparams below
 
     NODELET_DEBUG("Initializing image2rtsp nodelet...");
 
@@ -36,7 +36,7 @@ void Image2RTSPNodelet::onInit() {
     nh.getParam("port", this->port);
 
     video_mainloop_start();
-  rtsp_server = rtsp_server_create(port);
+    rtsp_server = rtsp_server_create(port);
 
     // Go through and parse each stream
     for(XmlRpc::XmlRpcValue::ValueStruct::const_iterator it = streams.begin(); it != streams.end(); ++it)
@@ -46,13 +46,13 @@ void Image2RTSPNodelet::onInit() {
 
         // Convert to string for ease of use
         mountpoint = static_cast<std::string>(stream["mountpoint"]);
-        bitrate = std::to_string(static_cast<int>(stream["bitrate"]));
+        format = static_cast<std::string>(stream["format"]);
+        encoder = static_cast<std::string>(stream["encoder"]);
 
         // uvc camera?
         if (stream["type"]=="cam")
         {
-            pipeline = "( " + static_cast<std::string>(stream["source"]) + " ! x264enc tune=zerolatency bitrate=" + bitrate + pipeline_tail;
-
+            pipeline = "( " + static_cast<std::string>(stream["source"]) + " ! videoconvert ! videoscale ! " + format + " ! " + encoder + pipeline_tail;
             rtsp_server_add_url(mountpoint.c_str(), pipeline.c_str(), NULL);
         }
         // ROS Image topic?
@@ -62,11 +62,9 @@ void Image2RTSPNodelet::onInit() {
             * so we know to stop subscribing when no-one is connected. */
             num_of_clients[mountpoint] = 0;
             appsrc[mountpoint] = NULL;
-            caps = static_cast<std::string>(stream["caps"]);
 
             // Setup the full pipeline
-            pipeline = "( appsrc name=imagesrc do-timestamp=true min-latency=0 max-latency=0 max-bytes=1000 is-live=true ! videoconvert ! videoscale ! " + caps + " ! x264enc tune=zerolatency bitrate=" + bitrate + pipeline_tail;
-
+            pipeline = "( appsrc name=imagesrc do-timestamp=true min-latency=0 max-latency=0 max-bytes=1000 is-live=true ! videoconvert ! videoscale ! " + format + " ! " + encoder + pipeline_tail;
             // Add the pipeline to the rtsp server
             rtsp_server_add_url(mountpoint.c_str(), pipeline.c_str(), (GstElement **)&(appsrc[mountpoint]));
         }
